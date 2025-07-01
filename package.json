@@ -1,0 +1,24 @@
+{
+  "name": "obs-kotoba-whisper",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/NettoNeon/obs-kotoba-whisper#readme",
+  "bugs": {
+    "url": "https://github.com/NettoNeon/obs-kotoba-whisper/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NettoNeon/obs-kotoba-whisper.git"
+  },
+  "license": "MIT",
+  "author": "NettoNeon",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "electron": "^37.1.0"
+  }
+}
