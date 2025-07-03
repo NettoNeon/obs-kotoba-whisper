@@ -1,2 +1,3 @@
-/onnx_output/*
+*/onnx_output/*
 /node_modules/*
+/models/*.onnx

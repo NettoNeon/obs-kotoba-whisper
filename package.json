@@ -16,9 +16,13 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest"
   },
   "devDependencies": {
-    "electron": "^37.1.0"
+    "electron": "^37.1.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.22.0-rev"
   }
 }
