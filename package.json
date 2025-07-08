@@ -1,24 +1,36 @@
 {
   "name": "obs-kotoba-whisper",
+  "productName": "obs-kotoba-whisper",
   "version": "1.0.0",
-  "description": "",
-  "homepage": "https://github.com/NettoNeon/obs-kotoba-whisper#readme",
-  "bugs": {
-    "url": "https://github.com/NettoNeon/obs-kotoba-whisper/issues"
+  "description": "My Electron application description",
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "echo \"No linting configured\""
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/NettoNeon/obs-kotoba-whisper.git"
+  "keywords": [],
+  "author": {
+    "name": "NettoNeon_legion",
+    "email": "136179995+NettoNeon@users.noreply.github.com"
   },
   "license": "MIT",
-  "author": "NettoNeon",
-  "type": "module",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "devDependencies": {
-    "electron": "^37.1.0"
+    "@electron-forge/cli": "^7.8.1",
+    "@electron-forge/maker-deb": "^7.8.1",
+    "@electron-forge/maker-rpm": "^7.8.1",
+    "@electron-forge/maker-squirrel": "^7.8.1",
+    "@electron-forge/maker-zip": "^7.8.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
+    "@electron-forge/plugin-fuses": "^7.8.1",
+    "@electron-forge/plugin-vite": "^7.8.1",
+    "@electron/fuses": "^1.8.0",
+    "electron": "37.2.0",
+    "vite": "^5.4.19"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1"
   }
 }
