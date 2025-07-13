@@ -1,0 +1,26 @@
+:root {
+  /* Primary Colors (Pastel Green) */
+  --primary-light: #f0fff0; /* Honeydew - とても淡い緑 */
+  --primary-light: #b0e0e6; /* PowderBlue - 優しい水色に近いパステルグリーン */
+  --primary-dark: #8fbc8f; /* DarkSeaGreen - やや落ち着いた緑 */
+  --primary-text: #4a6a4a; /* 少し濃い緑で読みやすい色 */
+
+  /* Warning Colors (Pastel Yellow) */
+  --warning-light: #ffffe0; /* LightYellow - とても淡い黄 */
+  --warning-light: #fffacd; /* LemonChiffon - 優しいクリーム色 */
+  --warning-dark: #ffe4b5; /* Moccasin - 少しオレンジがかった黄 */
+  --warning-text: #6a6a4a; /* 少し濃い茶色系で読みやすい色 */
+
+  /* Error Colors (Pastel Red) */
+  --error-light: #fff0f5; /* LavenderBlush - とても淡いピンク */
+  --error-light: #ffc0cb; /* Pink - 優しいピンク */
+  --error-dark: #ffb6c1; /* LightPink - 少し濃いめのピンク */
+  --error-text: #8b0000; /* DarkRed - 読みやすい濃い赤 */
+
+  /* Neutral Colors (optional, but often useful) */
+  --neutral-white: #ffffff;
+  --neutral-light-gray: #f8f8f8; /* 非常に淡いグレー */
+  --neutral-gray: #e0e0e0; /* 淡いグレー */
+  --neutral-dark-gray: #a0a0a0; /* 少し濃いグレー */
+  --neutral-black: #333333; /* 完全に真っ黒ではない少しソフトな黒 */
+}

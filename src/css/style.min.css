@@ -1,1 +1,1 @@
-
+:root{--primary-light: #f0fff0;--primary-light: #b0e0e6;--primary-dark: #8fbc8f;--primary-text: #4a6a4a;--warning-light: #ffffe0;--warning-light: #fffacd;--warning-dark: #ffe4b5;--warning-text: #6a6a4a;--error-light: #fff0f5;--error-light: #ffc0cb;--error-dark: #ffb6c1;--error-text: #8b0000;--neutral-white: #ffffff;--neutral-light-gray: #f8f8f8;--neutral-gray: #e0e0e0;--neutral-dark-gray: #a0a0a0;--neutral-black: #333333}.btn{padding:5px 20px 7px;border-radius:999px;font-weight:700;border:1px solid #000;background-color:var(--primary-dark)}

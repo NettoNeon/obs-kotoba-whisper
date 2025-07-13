@@ -1,2 +1,14 @@
 @charset "UTF-8";
-// @use "utility";
+@use "_colors";
+
+html {
+  // font-familyを追加
+}
+
+.btn {
+  padding: 5px 20px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+  border: 1px solid #000;
+  background-color: var(--primary-dark);
+}
