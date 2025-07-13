@@ -11,7 +11,10 @@
     "publish": "electron-forge publish",
     "lint": "echo \"No linting configured\"",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "watch": "npm-run-all -p sass postcss",
+    "sass": "sass src/scss/style.scss:src/css/style.min.css src/scss/reset.scss:src/css/reset.min.css --no-source-map --style compressed --watch",
+    "postcss": "postcss --use autoprefixer --no-map  src/css/style.min.css -o src/css/style.min.css --watch"
   },
   "keywords": [],
   "author": {
@@ -36,17 +39,21 @@
     "@storybook/addon-vitest": "^9.0.16",
     "@storybook/vue3-vite": "^9.0.16",
     "@types/electron": "^1.6.12",
+    "@types/electron-squirrel-startup": "^1.0.2",
     "@types/node": "^24.0.13",
     "@vitejs/plugin-vue": "^6.0.0",
+    "@vitest/browser": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "autoprefixer": "^10.4.21",
     "electron": "37.2.0",
+    "npm-run-all": "^4.1.5",
+    "playwright": "^1.54.0",
+    "postcss-cli": "^11.0.1",
     "sass-embedded": "^1.89.2",
     "storybook": "^9.0.16",
     "typescript": "^5.8.3",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4",
-    "@vitest/browser": "^3.2.4",
-    "playwright": "^1.54.0",
-    "@vitest/coverage-v8": "^3.2.4"
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
