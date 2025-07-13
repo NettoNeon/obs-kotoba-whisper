@@ -2,7 +2,7 @@
 @use "_colors";
 
 html {
-  // font-familyを追加
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif, "Segoe UI Emoji", sans-serif;
 }
 
 .btn {
@@ -10,5 +10,9 @@ html {
   border-radius: 999px;
   font-weight: 700;
   border: 1px solid #000;
-  background-color: var(--primary-dark);
+  background: var(--neutral-dark-gray);
+  color: var(--primary-text);
+  &.-active {
+    background-color: var(--primary-dark);
+  }
 }

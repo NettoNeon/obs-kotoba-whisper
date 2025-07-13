@@ -1,13 +1,30 @@
 <template>
   <section>
     <h1>文字起こし</h1>
-    <div>
-      <button id="start-rec" class="btn">開始</button>
-      <button id="stop-rec" class="btn">停止</button>
-    </div>
+    <button ref="btnRec" class="btn" :class="_rec || '-active'">
+      <span v-if="!_rec">開始</span>
+      <span v-else>停止</span>
+    </button>
+
+    <p>{{ _text }}</p>
   </section>
 </template>
 
 <script setup lang="ts">
-console.log('👋 This message is being logged by "App.vue", included via Vite');
+import { useTemplateRef, ref, onMounted } from "vue";
+let _text = ref<string>("ここにテキストが表示されます");
+let _rec = ref<boolean>(false);
+const BtnRec = useTemplateRef("btnRec");
+
+function startRec() {}
+
+function stopRec() {}
+
+onMounted(() => {
+  BtnRec.value?.addEventListener("click", () => {
+    _rec.value = !_rec.value;
+  });
+});
+
+// すべての編集はここから先に記述する
 </script>
