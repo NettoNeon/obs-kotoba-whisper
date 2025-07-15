@@ -1,6 +1,9 @@
 import { app, BrowserWindow, session, ipcMain } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
+import { InferenceSession, Tensor } from "onnxruntime-node";
+
+let session: InferenceSession | null = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -50,6 +53,42 @@ app.whenReady().then(() => {
       return path.join(modelDir, onnxFile);
     }
     return null;
+  });
+
+  ipcMain.handle("load-model", async () => {
+    const modelPath = await ipcMain.invoke("get-model-path");
+    if (!modelPath) {
+      console.error("ONNX model not found.");
+      return false;
+    }
+    try {
+      session = await InferenceSession.create(modelPath);
+      console.log("ONNX model loaded successfully.");
+      return true;
+    } catch (error) {
+      console.error("Failed to load ONNX model:", error);
+      return false;
+    }
+  });
+
+  ipcMain.handle("run-inference", async (event, audioData) => {
+    if (!session) {
+      console.error("Inference session not initialized.");
+      return null;
+    }
+    try {
+      const inputTensor = new Tensor("float", audioData, [1, audioData.length]);
+      const feeds = { [session.inputNames[0]]: inputTensor };
+      const results = await session.run(feeds);
+      const outputTensor = results[session.outputNames[0]];
+      // ここでは、簡単に出力テンソルのデータを文字列として返します。
+      // 実際のアプリケーションでは、Whisperの出力（トークンID）をデコードして、
+      // 意味のあるテキストに変換する処理が必要です。
+      return outputTensor.data.toString();
+    } catch (error) {
+      console.error("Failed to run inference:", error);
+      return null;
+    }
   });
 
   createWindow();

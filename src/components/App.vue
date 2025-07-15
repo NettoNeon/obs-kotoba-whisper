@@ -9,25 +9,26 @@
 
     <p>Model Status: {{ modelStatus }}</p>
 
-    <p>{{ _text }}</p>
+    <p>{{ transcript }}</p>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useMicrophone } from "../composables/useMicrophone";
 import { useWhisper } from "../composables/useWhisper";
 
-let _text = ref<string>("ここにテキストが表示されます");
-
-const { isRecording, error, getMicrophone, stopMicrophone } = useMicrophone();
-const { modelStatus, loadModel } = useWhisper();
+const { isRecording, error, audioData, getMicrophone, stopMicrophone } = useMicrophone();
+const { modelStatus, loadModel, runInference, transcript } = useWhisper();
 
 onMounted(() => {
-  // main.tsでpreload.tsを介してモデルのパスを受け取る想定
-  window.electron.getModelPath().then((modelPath: string) => {
-    loadModel(modelPath);
-  });
+  loadModel();
+});
+
+watch(audioData, (newAudioData) => {
+  if (newAudioData) {
+    runInference(newAudioData);
+  }
 });
 
 const toggleMicrophone = () => {

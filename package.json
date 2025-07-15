@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
-    "onnxruntime-web": "^1.22.0",
+    "onnxruntime-node": "^1.22.0-rev",
     "vue": "^3.5.17"
   }
 }
