@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, session, ipcMain } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
 
@@ -39,6 +39,19 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
+  ipcMain.handle("get-model-path", () => {
+    // modelsフォルダ内の最初の.onnxファイルをモデルパスとして返す
+    // 適切なモデル選択ロジックに置き換えてください
+    const modelDir = path.join(app.getAppPath(), "models");
+    const fs = require("fs");
+    const files = fs.readdirSync(modelDir);
+    const onnxFile = files.find((file: string) => file.endsWith(".onnx"));
+    if (onnxFile) {
+      return path.join(modelDir, onnxFile);
+    }
+    return null;
+  });
+
   createWindow();
 
   // for mac
