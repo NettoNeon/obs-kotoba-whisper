@@ -4,10 +4,10 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     rollupOptions: {
-      external: ["onnxruntime-node", "tokenizers"],
+      external: ["onnxruntime-node", "sharp"],
     },
   },
   optimizeDeps: {
-    exclude: ["onnxruntime-node", "tokenizers"],
+    exclude: ["onnxruntime-node", "sharp"],
   },
 });

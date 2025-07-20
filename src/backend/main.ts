@@ -1,9 +1,14 @@
 import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
-import path from "node:path";
 import started from "electron-squirrel-startup";
-import { Tokenizer } from "tokenizers";
-
+import { env, AutoTokenizer } from "@xenova/transformers";
 import { InferenceSession, Tensor } from "onnxruntime-node";
+import fs from "fs";
+import path from "node:path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const FEATURE_SIZE = 128; // モデルが期待する特徴量サイズ (通常80)
 
 let encoderSession: InferenceSession | null = null;
@@ -50,7 +55,6 @@ app.whenReady().then(() => {
 
   function getModelPaths() {
     const modelDir = path.join(app.getAppPath(), "models");
-    const fs = require("fs");
     const files: string[] = fs.readdirSync(modelDir);
     const encoderFile = files.find((file: string) => file.includes("encoder") && file.endsWith(".onnx"));
     const decoderFile = files.find((file: string) => file.includes("decoder") && file.endsWith(".onnx"));
@@ -129,10 +133,15 @@ app.whenReady().then(() => {
       const outputTensor = decoderResults[decoderOutputName];
 
       // 4. トークナイザーによるデコード
-      const tokenizerPath = path.join(app.getAppPath(), "models", "tokenizer.json");
-      const tokenizer = await Tokenizer.fromFile(tokenizerPath);
+      // AutoTokenizerを使って、モデルに合わせたトークナイザーを読み込む
+      // モデルが格納されているルートディレクトリのパスを設定
+      env.localModelPath = path.posix.resolve(__dirname, "..", "models");
+      const tokenizer = await AutoTokenizer.from_pretrained("", { local_files_only: true });
+      // Failed to run inference: TypeError: x.split is not a function
       const tokenIds = Array.from(outputTensor.data as BigInt64Array, Number);
-      const decodedText = tokenizer.decode(tokenIds, true);
+      const decodedText = tokenizer.decode(tokenIds, {
+        skip_special_tokens: true,
+      });
 
       // 出力テンソル（トークンID列）を文字列で返す
       return decodedText;
