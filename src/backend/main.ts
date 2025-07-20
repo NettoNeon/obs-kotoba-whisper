@@ -1,9 +1,10 @@
 import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
+import { Tokenizer } from "tokenizers";
 
 import { InferenceSession, Tensor } from "onnxruntime-node";
-const FEATURE_SIZE = 80; // モデルが期待する特徴量サイズ (通常80)
+const FEATURE_SIZE = 128; // モデルが期待する特徴量サイズ (通常80)
 
 let encoderSession: InferenceSession | null = null;
 let decoderSession: InferenceSession | null = null;
@@ -89,13 +90,25 @@ app.whenReady().then(() => {
     }
     try {
       // 1. エンコーダ推論
-      // audioData.length は [フレーム数 * FEATURE_SIZE] である必要がある
-      if (!audioData || audioData.length % FEATURE_SIZE !== 0) {
-        console.error("audioData length is not a multiple of FEATURE_SIZE (80). Skipping inference.");
-        return null;
+      // Whisperモデルは固定長の入力を期待するため、30秒（3000フレーム）にパディング/トランケーションする
+      const expectedFrames = 3000;
+      const totalExpectedValues = FEATURE_SIZE * expectedFrames;
+
+      let processedAudioData: Float32Array;
+      if (audioData.length > totalExpectedValues) {
+        // 長すぎる場合は切り詰める
+        processedAudioData = audioData.slice(0, totalExpectedValues);
+      } else if (audioData.length < totalExpectedValues) {
+        // 短い場合は0でパディングする
+        processedAudioData = new Float32Array(totalExpectedValues);
+        processedAudioData.set(audioData);
+      } else {
+        processedAudioData = audioData;
       }
-      const numFrames = audioData.length / FEATURE_SIZE;
-      const encoderInput = new Tensor("float32", audioData, [1, numFrames, FEATURE_SIZE]);
+
+      const numFrames = processedAudioData.length / FEATURE_SIZE;
+      // ONNXモデルが期待する入力形状 [batch_size, feature_size, sequence_length] に合わせる
+      const encoderInput = new Tensor("float32", processedAudioData, [1, FEATURE_SIZE, numFrames]);
       const encoderFeeds: Record<string, Tensor> = {};
       encoderFeeds[encoderSession.inputNames[0]] = encoderInput;
       const encoderResults = await encoderSession.run(encoderFeeds);
@@ -114,8 +127,15 @@ app.whenReady().then(() => {
       const decoderResults = await decoderSession.run(decoderFeeds);
       const decoderOutputName = decoderSession.outputNames[0];
       const outputTensor = decoderResults[decoderOutputName];
+
+      // 4. トークナイザーによるデコード
+      const tokenizerPath = path.join(app.getAppPath(), "models", "tokenizer.json");
+      const tokenizer = await Tokenizer.fromFile(tokenizerPath);
+      const tokenIds = Array.from(outputTensor.data as BigInt64Array, Number);
+      const decodedText = tokenizer.decode(tokenIds, true);
+
       // 出力テンソル（トークンID列）を文字列で返す
-      return outputTensor.data.toString();
+      return decodedText;
     } catch (error) {
       console.error("Failed to run inference:", error);
       return null;
