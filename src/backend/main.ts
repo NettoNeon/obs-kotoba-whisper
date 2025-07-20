@@ -35,7 +35,7 @@ const createWindow = () => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": "default-src 'self'; style-src 'self'",
+        "Content-Security-Policy": "default-src 'self'; style-src 'self'; script-src 'self' blob:;",
       },
     });
   });
