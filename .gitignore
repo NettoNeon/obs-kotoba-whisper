@@ -1,6 +1,6 @@
 */onnx_output/*
 /node_modules/*
-/models/*.onnx
+/models/*
 
 # Logs
 logs

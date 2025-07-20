@@ -1,9 +1,12 @@
 import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
-import { InferenceSession, Tensor } from "onnxruntime-node";
 
-let session: InferenceSession | null = null;
+import { InferenceSession, Tensor } from "onnxruntime-node";
+const FEATURE_SIZE = 80; // モデルが期待する特徴量サイズ (通常80)
+
+let encoderSession: InferenceSession | null = null;
+let decoderSession: InferenceSession | null = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -43,50 +46,75 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   // get-model-pathのロジックを関数化
-  function getModelPath() {
+
+  function getModelPaths() {
     const modelDir = path.join(app.getAppPath(), "models");
     const fs = require("fs");
     const files: string[] = fs.readdirSync(modelDir);
-    const onnxFile = files.find((file: string) => file.endsWith(".onnx"));
-    if (onnxFile) {
-      return path.join(modelDir, onnxFile);
-    }
-    return null;
+    const encoderFile = files.find((file: string) => file.includes("encoder") && file.endsWith(".onnx"));
+    const decoderFile = files.find((file: string) => file.includes("decoder") && file.endsWith(".onnx"));
+    return {
+      encoder: encoderFile ? path.join(modelDir, encoderFile) : null,
+      decoder: decoderFile ? path.join(modelDir, decoderFile) : null,
+    };
   }
 
   ipcMain.handle("get-model-path", () => {
-    return getModelPath();
+    // 便宜的にエンコーダモデルのパスを返す
+    const paths = getModelPaths();
+    return paths.encoder;
   });
 
   ipcMain.handle("load-model", async () => {
-    const modelPath = getModelPath();
-    if (!modelPath) {
-      console.error("ONNX model not found.");
+    const { encoder, decoder } = getModelPaths();
+    if (!encoder || !decoder) {
+      console.error("ONNX encoder/decoder model not found.");
       return false;
     }
     try {
-      session = await InferenceSession.create(modelPath);
-      console.log("ONNX model loaded successfully.");
+      encoderSession = await InferenceSession.create(encoder);
+      decoderSession = await InferenceSession.create(decoder);
+      console.log("ONNX encoder/decoder models loaded successfully.");
       return true;
     } catch (error) {
-      console.error("Failed to load ONNX model:", error);
+      console.error("Failed to load ONNX models:", error);
       return false;
     }
   });
 
   ipcMain.handle("run-inference", async (event, audioData) => {
-    if (!session) {
+    if (!encoderSession || !decoderSession) {
       console.error("Inference session not initialized.");
       return null;
     }
     try {
-      const inputTensor = new Tensor("float32", audioData, [1, audioData.length]);
-      const feeds = { [session.inputNames[0]]: inputTensor };
-      const results = await session.run(feeds);
-      const outputTensor = results[session.outputNames[0]];
-      // ここでは、簡単に出力テンソルのデータを文字列として返します。
-      // 実際のアプリケーションでは、Whisperの出力（トークンID）をデコードして、
-      // 意味のあるテキストに変換する処理が必要です。
+      // 1. エンコーダ推論
+      // audioData.length は [フレーム数 * FEATURE_SIZE] である必要がある
+      if (!audioData || audioData.length % FEATURE_SIZE !== 0) {
+        console.error("audioData length is not a multiple of FEATURE_SIZE (80). Skipping inference.");
+        return null;
+      }
+      const numFrames = audioData.length / FEATURE_SIZE;
+      const encoderInput = new Tensor("float32", audioData, [1, numFrames, FEATURE_SIZE]);
+      const encoderFeeds: Record<string, Tensor> = {};
+      encoderFeeds[encoderSession.inputNames[0]] = encoderInput;
+      const encoderResults = await encoderSession.run(encoderFeeds);
+      // encoder_hidden_statesの出力名を取得
+      const encoderOutputName = encoderSession.outputNames[0];
+      const encoderHiddenStates = encoderResults[encoderOutputName];
+
+      // 2. デコーダ推論
+      // input_ids: 開始トークン（Whisperの場合50257や1など）
+      // ここでは1トークンのみ仮で生成
+      const startToken = 50257; // Whisperのデフォルト開始トークン（モデルによって異なる場合あり）
+      const inputIdsTensor = new Tensor("int64", BigInt64Array.from([BigInt(startToken)]), [1, 1]);
+      const decoderFeeds: Record<string, Tensor> = {};
+      decoderFeeds[decoderSession.inputNames[0]] = inputIdsTensor;
+      decoderFeeds[decoderSession.inputNames[1]] = encoderHiddenStates;
+      const decoderResults = await decoderSession.run(decoderFeeds);
+      const decoderOutputName = decoderSession.outputNames[0];
+      const outputTensor = decoderResults[decoderOutputName];
+      // 出力テンソル（トークンID列）を文字列で返す
       return outputTensor.data.toString();
     } catch (error) {
       console.error("Failed to run inference:", error);
