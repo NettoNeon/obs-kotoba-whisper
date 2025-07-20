@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain } from "electron";
+import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
 import { InferenceSession, Tensor } from "onnxruntime-node";
@@ -31,7 +31,7 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 
   // https://www.electronjs.org/docs/latest/tutorial/security#7-define-a-content-security-policy
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
@@ -42,21 +42,24 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
-  ipcMain.handle("get-model-path", () => {
-    // modelsフォルダ内の最初の.onnxファイルをモデルパスとして返す
-    // 適切なモデル選択ロジックに置き換えてください
+  // get-model-pathのロジックを関数化
+  function getModelPath() {
     const modelDir = path.join(app.getAppPath(), "models");
     const fs = require("fs");
-    const files = fs.readdirSync(modelDir);
+    const files: string[] = fs.readdirSync(modelDir);
     const onnxFile = files.find((file: string) => file.endsWith(".onnx"));
     if (onnxFile) {
       return path.join(modelDir, onnxFile);
     }
     return null;
+  }
+
+  ipcMain.handle("get-model-path", () => {
+    return getModelPath();
   });
 
   ipcMain.handle("load-model", async () => {
-    const modelPath = await ipcMain.invoke("get-model-path");
+    const modelPath = getModelPath();
     if (!modelPath) {
       console.error("ONNX model not found.");
       return false;
@@ -77,7 +80,7 @@ app.whenReady().then(() => {
       return null;
     }
     try {
-      const inputTensor = new Tensor("float", audioData, [1, audioData.length]);
+      const inputTensor = new Tensor("float32", audioData, [1, audioData.length]);
       const feeds = { [session.inputNames[0]]: inputTensor };
       const results = await session.run(feeds);
       const outputTensor = results[session.outputNames[0]];

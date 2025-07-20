@@ -7,13 +7,30 @@ export function useMicrophone() {
   const AudioData = ref<Float32Array | null>(null);
 
   let _audioContext: AudioContext | null = null;
-  let _processor: ScriptProcessorNode | null = null;
+  let _workletNode: AudioWorkletNode | null = null;
   let _source: MediaStreamAudioSourceNode | null = null;
 
-  const processAudio = (event: AudioProcessingEvent) => {
-    const inputData = event.inputBuffer.getChannelData(0);
-    // データをコピーして保持する
-    AudioData.value = new Float32Array(inputData);
+  // AudioWorkletProcessorのコードを文字列で定義
+  const workletProcessorCode = `
+    class MicrophoneProcessor extends AudioWorkletProcessor {
+      process(inputs, outputs, parameters) {
+        const input = inputs[0];
+        if (input && input[0]) {
+          // Float32Arrayをメインスレッドに送信
+          this.port.postMessage(input[0]);
+        }
+        return true;
+      }
+    }
+    registerProcessor('microphone-processor', MicrophoneProcessor);
+  `;
+
+  // AudioWorkletNodeからのメッセージを受け取る
+  const handleWorkletMessage = (event: MessageEvent) => {
+    const inputData = event.data;
+    if (inputData instanceof Float32Array) {
+      AudioData.value = new Float32Array(inputData);
+    }
   };
 
   const getMicrophone = async () => {
@@ -40,23 +57,27 @@ export function useMicrophone() {
     }
   };
 
-  watch(Stream, (newStream) => {
+  watch(Stream, async (newStream) => {
     if (newStream) {
       _audioContext = new AudioContext();
-      _processor = _audioContext.createScriptProcessor(4096, 1, 1);
+      // AudioWorkletProcessorを動的に追加
+      const blob = new Blob([workletProcessorCode], { type: "application/javascript" });
+      const url = URL.createObjectURL(blob);
+      await _audioContext.audioWorklet.addModule(url);
       _source = _audioContext.createMediaStreamSource(newStream);
-      _source.connect(_processor);
-      _processor.connect(_audioContext.destination);
-      _processor.onaudioprocess = processAudio;
+      _workletNode = new AudioWorkletNode(_audioContext, "microphone-processor");
+      _workletNode.port.onmessage = handleWorkletMessage;
+      _source.connect(_workletNode);
+      // destinationに繋がなくてもOK（録音のみなら）
     } else {
       if (_source) {
         _source.disconnect();
         _source = null;
       }
-      if (_processor) {
-        _processor.disconnect();
-        _processor.onaudioprocess = null;
-        _processor = null;
+      if (_workletNode) {
+        _workletNode.port.onmessage = null;
+        _workletNode.disconnect();
+        _workletNode = null;
       }
       if (_audioContext) {
         _audioContext.close();
