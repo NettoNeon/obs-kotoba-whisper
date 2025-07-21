@@ -13,7 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -f https://download.pytorch.org/whl/cpu/torch_stable.html
 
 # スクリプトをコンテナにコピーします
-COPY convert_to_onnx.py .
+COPY convert_fasttokenizer.py .
 COPY run_conversion.sh .
 
 # 実行権限を付与します
@@ -21,3 +21,5 @@ RUN chmod +x run_conversion.sh
 
 # デフォルトのコマンドを設定します
 CMD ["./run_conversion.sh"]
+
+# docker run --rm -v ${pwd}/token:/app/token obs-kotoba-converter

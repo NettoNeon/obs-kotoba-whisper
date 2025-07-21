@@ -4,10 +4,10 @@
 MODEL_NAME="kotoba-tech/kotoba-whisper-v2.2" 
 
 # ONNXモデルの出力ディレクトリ
-OUTPUT_DIR="/app/onnx_model"
+OUTPUT_DIR="/app/token"
 
 echo "Hugging Faceモデル ${MODEL_NAME} をONNX形式に変換します..."
-python convert_to_onnx.py --model_name "${MODEL_NAME}" --output_path "${OUTPUT_DIR}"
+python convert_fasttokenizer.py --model_name "${MODEL_NAME}" --output_path "${OUTPUT_DIR}"
 
 if [ $? -eq 0 ]; then
     echo "ONNX変換が正常に完了しました。"
