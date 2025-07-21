@@ -1,6 +1,8 @@
 import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
 import started from "electron-squirrel-startup";
-import { env, AutoTokenizer } from "@xenova/transformers";
+// import { env, AutoTokenizer } from "@huggingface/transformers";
+// Cannot read properties of undefined (reading 'get')
+const { env, AutoTokenizer, AutoProcessor } = require("@huggingface/transformers");
 import { InferenceSession, Tensor } from "onnxruntime-node";
 import fs from "fs";
 import path from "node:path";
@@ -8,8 +10,6 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const FEATURE_SIZE = 128; // モデルが期待する特徴量サイズ (通常80)
 
 let encoderSession: InferenceSession | null = null;
 let decoderSession: InferenceSession | null = null;
@@ -88,6 +88,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("run-inference", async (event, audioData) => {
+    // オーディオ状況の確認
+    // console.log("audioData size:", audioData.length);
+    // const isAllZeros = audioData.every((val) => val === 0);
+    // console.log("Is audioData all zeros?", isAllZeros);
     if (!encoderSession || !decoderSession) {
       console.error("Inference session not initialized.");
       return null;
@@ -95,6 +99,7 @@ app.whenReady().then(() => {
     try {
       // 1. エンコーダ推論
       // Whisperモデルは固定長の入力を期待するため、30秒（3000フレーム）にパディング/トランケーションする
+      const FEATURE_SIZE = 128; // モデルが期待する特徴量サイズ (通常80)
       const expectedFrames = 3000;
       const totalExpectedValues = FEATURE_SIZE * expectedFrames;
 
@@ -119,31 +124,76 @@ app.whenReady().then(() => {
       // encoder_hidden_statesの出力名を取得
       const encoderOutputName = encoderSession.outputNames[0];
       const encoderHiddenStates = encoderResults[encoderOutputName];
+      const decoderOutputName = decoderSession.outputNames[0];
 
       // 2. デコーダ推論
       // input_ids: 開始トークン（Whisperの場合50257や1など）
       // ここでは1トークンのみ仮で生成
-      const startToken = 50257; // Whisperのデフォルト開始トークン（モデルによって異なる場合あり）
+      const startToken = 50258; // <|startoftranscript|>
       const inputIdsTensor = new Tensor("int64", BigInt64Array.from([BigInt(startToken)]), [1, 1]);
       const decoderFeeds: Record<string, Tensor> = {};
       decoderFeeds[decoderSession.inputNames[0]] = inputIdsTensor;
       decoderFeeds[decoderSession.inputNames[1]] = encoderHiddenStates;
-      const decoderResults = await decoderSession.run(decoderFeeds);
-      const decoderOutputName = decoderSession.outputNames[0];
-      const outputTensor = decoderResults[decoderOutputName];
 
       // 4. トークナイザーによるデコード
-      // AutoTokenizerを使って、モデルに合わせたトークナイザーを読み込む
-      // モデルが格納されているルートディレクトリのパスを設定
-      env.localModelPath = path.posix.resolve(__dirname, "..", "models");
-      const tokenizer = await AutoTokenizer.from_pretrained("", { local_files_only: true });
-      // Failed to run inference: TypeError: x.split is not a function
-      const tokenIds = Array.from(outputTensor.data as BigInt64Array, Number);
-      const decodedText = tokenizer.decode(tokenIds, {
-        skip_special_tokens: true,
+      env.localModelPath = path.join(app.getAppPath());
+      env.allowRemoteModels = false;
+      const tokenizer = await AutoTokenizer.from_pretrained("models", { local_files_only: true });
+
+      // モデルの出力をトークンIDに変換し、テキストを生成するデコーディングループ
+      const generatedTokenIds: number[] = [];
+
+      // デコーダの入力として、スタートトークンとエンコーダの出力を設定
+      const decoderInputIds = new Tensor("int64", BigInt64Array.from([BigInt(startToken)]), [1, 1]);
+      const decoderHiddenStates = encoderHiddenStates;
+
+      const decoderNextFeeds: Record<string, Tensor> = {};
+      decoderNextFeeds[decoderSession.inputNames[0]] = decoderInputIds;
+      decoderNextFeeds[decoderSession.inputNames[1]] = decoderHiddenStates;
+
+      // 最大224トークンまで生成する（Whisper large-v3のmax_length）
+      const maxGeneratedTokens = 224;
+
+      for (let i = 0; i < maxGeneratedTokens; i++) {
+        // デコーダを実行
+        const results = await decoderSession.run(decoderNextFeeds);
+        const logits = results[decoderOutputName];
+
+        // Logitsから最大値（最も可能性の高いトークンID）を特定
+        const nextTokenId = findMaxLogit(logits.data as Float32Array);
+
+        // 予測されたトークンIDを配列に追加
+        generatedTokenIds.push(nextTokenId);
+
+        // 終了トークン（<|endoftext|>）が生成されたらループを抜ける
+        if (nextTokenId === 50257) {
+          // 50257はWhisperの終了トークン
+          break;
+        }
+
+        // 次のデコーダ入力として、新しいトークンIDを設定
+        decoderNextFeeds[decoderSession.inputNames[0]] = new Tensor("int64", BigInt64Array.from([BigInt(nextTokenId)]), [1, 1]);
+      }
+
+      // 最後に、生成されたすべてのトークンIDをデコード
+      const decodedText = tokenizer.decode(generatedTokenIds, {
+        skip_special_tokens: false,
       });
 
-      // 出力テンソル（トークンID列）を文字列で返す
+      // デコーダーが受け取る「最も可能性の高いトークンID」を返すヘルパー関数
+      function findMaxLogit(logits: Float32Array): number {
+        let maxLogit = -Infinity;
+        let maxIndex = 0;
+        for (let i = 0; i < logits.length; i++) {
+          if (logits[i] > maxLogit) {
+            maxLogit = logits[i];
+            maxIndex = i;
+          }
+        }
+        return maxIndex;
+      }
+      console.log(decodedText);
+
       return decodedText;
     } catch (error) {
       console.error("Failed to run inference:", error);
