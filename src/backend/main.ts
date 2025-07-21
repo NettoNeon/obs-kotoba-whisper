@@ -1,7 +1,5 @@
 import { app, BrowserWindow, session as electronSession, ipcMain } from "electron";
 import started from "electron-squirrel-startup";
-// import { env, AutoTokenizer } from "@huggingface/transformers";
-// Cannot read properties of undefined (reading 'get')
 const { env, AutoTokenizer, AutoProcessor } = require("@huggingface/transformers");
 import { InferenceSession, Tensor } from "onnxruntime-node";
 import fs from "fs";
@@ -13,14 +11,14 @@ const __dirname = path.dirname(__filename);
 
 let encoderSession: InferenceSession | null = null;
 let decoderSession: InferenceSession | null = null;
+let tokenizer: any = null;
+let processor: any = null;
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
 const createWindow = () => {
-  // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
@@ -29,17 +27,14 @@ const createWindow = () => {
     },
   });
 
-  // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
-  // Open the DevTools.
   mainWindow.webContents.openDevTools();
 
-  // https://www.electronjs.org/docs/latest/tutorial/security#7-define-a-content-security-policy
   electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -51,8 +46,6 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
-  // get-model-pathのロジックを関数化
-
   function getModelPaths() {
     const modelDir = path.join(app.getAppPath(), "models");
     const files: string[] = fs.readdirSync(modelDir);
@@ -65,11 +58,11 @@ app.whenReady().then(() => {
   }
 
   ipcMain.handle("get-model-path", () => {
-    // 便宜的にエンコーダモデルのパスを返す
     const paths = getModelPaths();
     return paths.encoder;
   });
 
+  // モデルとプロセッサーを一度だけ読み込むように変更
   ipcMain.handle("load-model", async () => {
     const { encoder, decoder } = getModelPaths();
     if (!encoder || !decoder) {
@@ -79,108 +72,90 @@ app.whenReady().then(() => {
     try {
       encoderSession = await InferenceSession.create(encoder);
       decoderSession = await InferenceSession.create(decoder);
-      console.log("ONNX encoder/decoder models loaded successfully.");
+
+      env.localModelPath = path.join(app.getAppPath());
+      env.allowRemoteModels = false;
+      processor = await AutoProcessor.from_pretrained("models", { local_files_only: true });
+      tokenizer = await AutoTokenizer.from_pretrained("models", { local_files_only: true });
+
+      console.log("ONNX models and transformers loaded successfully.");
       return true;
     } catch (error) {
-      console.error("Failed to load ONNX models:", error);
+      console.error("Failed to load models:", error);
       return false;
     }
   });
 
+  // 既に読み込まれたモデルとプロセッサーを使用
   ipcMain.handle("run-inference", async (event, audioData) => {
-    // オーディオ状況の確認
-    // console.log("audioData size:", audioData.length);
-    // const isAllZeros = audioData.every((val) => val === 0);
-    // console.log("Is audioData all zeros?", isAllZeros);
-    if (!encoderSession || !decoderSession) {
-      console.error("Inference session not initialized.");
+    if (!encoderSession || !decoderSession || !processor || !tokenizer) {
+      console.error("Inference components not initialized.");
       return null;
     }
     try {
-      // 1. エンコーダ推論
-      // Whisperモデルは固定長の入力を期待するため、30秒（3000フレーム）にパディング/トランケーションする
-      const FEATURE_SIZE = 128; // モデルが期待する特徴量サイズ (通常80)
-      const expectedFrames = 3000;
-      const totalExpectedValues = FEATURE_SIZE * expectedFrames;
+      // 1. 生の音声波形データを前処理して、モデルの入力形式に変換
+      const audioDataTyped = new Float32Array(audioData);
 
-      let processedAudioData: Float32Array;
-      if (audioData.length > totalExpectedValues) {
-        // 長すぎる場合は切り詰める
-        processedAudioData = audioData.slice(0, totalExpectedValues);
-      } else if (audioData.length < totalExpectedValues) {
-        // 短い場合は0でパディングする
-        processedAudioData = new Float32Array(totalExpectedValues);
-        processedAudioData.set(audioData);
-      } else {
-        processedAudioData = audioData;
+      // ★★★ この2行を追加 ★★★
+      console.log(`main.ts: 受信した音声データの長さ: ${audioDataTyped.length}`);
+      let maxAmplitude = 0;
+      for (let i = 0; i < audioDataTyped.length; i++) {
+        const absValue = Math.abs(audioDataTyped[i]);
+        if (absValue > maxAmplitude) {
+          maxAmplitude = absValue;
+        }
       }
+      console.log(`main.ts: 受信した音声データの最大振幅: ${maxAmplitude}`);
 
-      const numFrames = processedAudioData.length / FEATURE_SIZE;
-      // ONNXモデルが期待する入力形状 [batch_size, feature_size, sequence_length] に合わせる
-      const encoderInput = new Tensor("float32", processedAudioData, [1, FEATURE_SIZE, numFrames]);
+      const { input_features } = await processor(audioDataTyped, {
+        sampling_rate: 16000,
+        return_tensors: "np",
+      });
+
+      // 2. エンコーダ推論 - input_featuresはすでにTensorなのでそのまま使用
+      const encoderInput = input_features;
       const encoderFeeds: Record<string, Tensor> = {};
       encoderFeeds[encoderSession.inputNames[0]] = encoderInput;
       const encoderResults = await encoderSession.run(encoderFeeds);
-      // encoder_hidden_statesの出力名を取得
       const encoderOutputName = encoderSession.outputNames[0];
       const encoderHiddenStates = encoderResults[encoderOutputName];
+
       const decoderOutputName = decoderSession.outputNames[0];
 
-      // 2. デコーダ推論
-      // input_ids: 開始トークン（Whisperの場合50257や1など）
-      // ここでは1トークンのみ仮で生成
-      const startToken = 50258; // <|startoftranscript|>
-      const inputIdsTensor = new Tensor("int64", BigInt64Array.from([BigInt(startToken)]), [1, 1]);
+      // 3. デコーダ推論の準備
+      const startToken = 50258;
+      const languageToken = 50290; // <|ja|>
+      const inputIdsTensor = new Tensor("int64", BigInt64Array.from([BigInt(startToken), BigInt(languageToken)]), [1, 2]);
       const decoderFeeds: Record<string, Tensor> = {};
       decoderFeeds[decoderSession.inputNames[0]] = inputIdsTensor;
       decoderFeeds[decoderSession.inputNames[1]] = encoderHiddenStates;
 
-      // 4. トークナイザーによるデコード
-      env.localModelPath = path.join(app.getAppPath());
-      env.allowRemoteModels = false;
-      const tokenizer = await AutoTokenizer.from_pretrained("models", { local_files_only: true });
-
-      // モデルの出力をトークンIDに変換し、テキストを生成するデコーディングループ
+      // 4. グリーディサーチによるテキスト生成ループ
       const generatedTokenIds: number[] = [];
-
-      // デコーダの入力として、スタートトークンとエンコーダの出力を設定
-      const decoderInputIds = new Tensor("int64", BigInt64Array.from([BigInt(startToken)]), [1, 1]);
-      const decoderHiddenStates = encoderHiddenStates;
-
-      const decoderNextFeeds: Record<string, Tensor> = {};
-      decoderNextFeeds[decoderSession.inputNames[0]] = decoderInputIds;
-      decoderNextFeeds[decoderSession.inputNames[1]] = decoderHiddenStates;
-
-      // 最大224トークンまで生成する（Whisper large-v3のmax_length）
       const maxGeneratedTokens = 224;
 
+      let currentInputIds = inputIdsTensor;
+
       for (let i = 0; i < maxGeneratedTokens; i++) {
-        // デコーダを実行
-        const results = await decoderSession.run(decoderNextFeeds);
+        decoderFeeds[decoderSession.inputNames[0]] = currentInputIds;
+        const results = await decoderSession.run(decoderFeeds);
         const logits = results[decoderOutputName];
 
-        // Logitsから最大値（最も可能性の高いトークンID）を特定
         const nextTokenId = findMaxLogit(logits.data as Float32Array);
 
-        // 予測されたトークンIDを配列に追加
         generatedTokenIds.push(nextTokenId);
 
-        // 終了トークン（<|endoftext|>）が生成されたらループを抜ける
         if (nextTokenId === 50257) {
-          // 50257はWhisperの終了トークン
           break;
         }
 
-        // 次のデコーダ入力として、新しいトークンIDを設定
-        decoderNextFeeds[decoderSession.inputNames[0]] = new Tensor("int64", BigInt64Array.from([BigInt(nextTokenId)]), [1, 1]);
+        currentInputIds = new Tensor("int64", BigInt64Array.from([BigInt(nextTokenId)]), [1, 1]);
       }
 
-      // 最後に、生成されたすべてのトークンIDをデコード
       const decodedText = tokenizer.decode(generatedTokenIds, {
-        skip_special_tokens: false,
+        skip_special_tokens: true,
       });
 
-      // デコーダーが受け取る「最も可能性の高いトークンID」を返すヘルパー関数
       function findMaxLogit(logits: Float32Array): number {
         let maxLogit = -Infinity;
         let maxIndex = 0;
@@ -192,7 +167,6 @@ app.whenReady().then(() => {
         }
         return maxIndex;
       }
-      console.log(decodedText);
 
       return decodedText;
     } catch (error) {
@@ -203,7 +177,6 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // for mac
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -211,7 +184,6 @@ app.whenReady().then(() => {
   });
 });
 
-// for mac
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
