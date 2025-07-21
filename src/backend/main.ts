@@ -63,15 +63,19 @@ app.whenReady().then(() => {
       return null;
     }
     try {
-      console.log(`Pipeline: 受信した音声データの長さ: ${audioData.length}`);
-
       const audioDataTyped = new Float32Array(audioData);
+      const audioLengthInSeconds = audioDataTyped.length / 16000;
+
+      if (audioLengthInSeconds < 0.5) {
+        console.log(`Audio too short (${audioLengthInSeconds.toFixed(2)}s). Skipping.`);
+        return null;
+      }
+
+      console.log(`Running inference on audio of ${audioLengthInSeconds.toFixed(2)}s`);
 
       const result = await whisperPipeline(audioDataTyped, {
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        return_timestamps: false,
         language: "ja",
+        max_new_tokens: 200,
       });
 
       console.log("Pipeline result:", result);

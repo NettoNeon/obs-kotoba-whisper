@@ -13,12 +13,39 @@ export function useMicrophone() {
   // AudioWorkletProcessorのコードを文字列で定義
   const workletProcessorCode = `
     class MicrophoneProcessor extends AudioWorkletProcessor {
-      process(inputs, outputs, parameters) {
-        const input = inputs[0];
-        if (input && input[0]) {
-          // Float32Arrayをメインスレッドに送信
-          this.port.postMessage(input[0]);
+      constructor() {
+        super();
+        this.targetSampleRate = 16000;
+        // 'sampleRate' is a global variable in the worklet scope
+        this.resampleRatio = sampleRate / this.targetSampleRate;
+      }
+
+      // Resamples the input buffer using simple nearest-neighbor interpolation
+      resample(buffer) {
+        if (this.resampleRatio === 1) return buffer;
+
+        const numOutputSamples = Math.floor(buffer.length / this.resampleRatio);
+        const resampledBuffer = new Float32Array(numOutputSamples);
+
+        for (let i = 0; i < numOutputSamples; i++) {
+          const nearestInputSample = Math.round(i * this.resampleRatio);
+          resampledBuffer[i] = buffer[nearestInputSample];
         }
+        return resampledBuffer;
+      }
+
+      process(inputs) {
+        const inputChannel = inputs[0][0];
+        if (!inputChannel) return true;
+
+        const resampledData = this.resample(inputChannel);
+
+        if (resampledData.length > 0) {
+          // Post the resampled data back to the main thread.
+          // Transfer the underlying ArrayBuffer to avoid copying.
+          this.port.postMessage(resampledData.buffer, [resampledData.buffer]);
+        }
+
         return true;
       }
     }
@@ -27,52 +54,57 @@ export function useMicrophone() {
 
   // --- 定数 ---
   const SAMPLE_RATE = 16000; // AudioWorkletから送られてくるデータのサンプルレート（Hz）
-  const INTERVAL = 1; // 1回の処理で蓄積する音声の長さ（秒）
-  const EXPECTED_AUDIO_LENGTH = 30 * SAMPLE_RATE; // 音声認識モデルが期待するデータの長さ（例：30秒）
-  const VOICE_THRESHOLD = 0.005; // 音声と判断する閾値
+  const VOICE_THRESHOLD = 0.0005; // 音声と判断する閾値
+  const SILENCE_THRESHOLD_FRAMES = Math.round((0.8 * SAMPLE_RATE) / 128); // 0.8秒間の無音で発話終了と判断 (128はworkletのフレームサイズ)
+  const MAX_AUDIO_LENGTH_S = 10; // 最大録音時間（秒）
 
-  // --- グローバル変数（バッファリング用）---
-  let audioBuffer: Float32Array = new Float32Array();
-  let lastSilencePosition = 0;
+  // --- 状態管理用の変数 ---
+  let _audioBuffer = new Float32Array();
+  let _isSpeaking = false;
+  let _silenceCount = 0;
 
-  // AudioWorkletNodeからのメッセージを受け取る（バッファリング・VAD・自動推論トリガー）
+  // AudioWorkletNodeからのメッセージを受け取る（VAD・自動推論トリガー）
   const handleWorkletMessage = (event: MessageEvent) => {
-    const newData = event.data as Float32Array;
+    // The data from the worklet is an ArrayBuffer, so we create a Float32Array view
+    const newData = new Float32Array(event.data);
 
-    // 1. 新しいデータを既存のバッファに追加
-    const newBuffer = new Float32Array(audioBuffer.length + newData.length);
-    newBuffer.set(audioBuffer);
-    newBuffer.set(newData, audioBuffer.length);
-    audioBuffer = newBuffer;
+    // 入力音声データに音声が含まれているかチェック
+    const isVoiceDetected = newData.some((sample) => Math.abs(sample) > VOICE_THRESHOLD);
 
-    // バッファが期待する長さになったら処理
-    if (audioBuffer.length >= EXPECTED_AUDIO_LENGTH) {
-      // 2. 音声区間を検出（簡易的な音量ベースのVAD）
-      let silenceDetected = false;
-      let silenceIndex = -1;
-      const checkRange = Math.min(audioBuffer.length, 3 * SAMPLE_RATE);
-      for (let i = audioBuffer.length - checkRange; i < audioBuffer.length; i++) {
-        if (Math.abs(audioBuffer[i]) < VOICE_THRESHOLD) {
-          silenceIndex = i;
-          silenceDetected = true;
-          break;
-        }
-      }
-      // 3. 無音区間が見つかったら、そこまでを切り出して送信
-      if (silenceDetected) {
-        const audioToProcess = audioBuffer.slice(0, silenceIndex);
-        if (audioToProcess.length > 0) {
-          AudioData.value = new Float32Array(audioToProcess); // 推論用にセット
-          // 推論トリガーはAudioDataのwatch側で行う（useWhisper連携）
-        }
-        audioBuffer = audioBuffer.slice(silenceIndex);
-        lastSilencePosition = 0;
+    if (_isSpeaking) {
+      // --- 発話中の処理 ---
+      // 新しいデータをバッファに追加
+      const newBuffer = new Float32Array(_audioBuffer.length + newData.length);
+      newBuffer.set(_audioBuffer);
+      newBuffer.set(newData, _audioBuffer.length);
+      _audioBuffer = newBuffer;
+
+      if (isVoiceDetected) {
+        // 音声が検出されたら無音カウントをリセット
+        _silenceCount = 0;
       } else {
-        // 無音区間が見つからない場合、バッファを切り詰める
-        const trimLength = 5 * SAMPLE_RATE;
-        if (audioBuffer.length > EXPECTED_AUDIO_LENGTH + trimLength) {
-          audioBuffer = audioBuffer.slice(audioBuffer.length - EXPECTED_AUDIO_LENGTH);
+        // 無音フレームをカウント
+        _silenceCount++;
+      }
+
+      // 無音が続いたか、最大長に達したら文字起こし実行
+      if (_silenceCount > SILENCE_THRESHOLD_FRAMES || _audioBuffer.length >= MAX_AUDIO_LENGTH_S * SAMPLE_RATE) {
+        if (_audioBuffer.length > SAMPLE_RATE * 0.5) {
+          // 0.5秒未満の音声は無視
+          AudioData.value = _audioBuffer;
         }
+        // 状態をリセット
+        _audioBuffer = new Float32Array();
+        _isSpeaking = false;
+        _silenceCount = 0;
+      }
+    } else {
+      // --- 待機中の処理 ---
+      if (isVoiceDetected) {
+        // 音声が検出されたら発話開始
+        _isSpeaking = true;
+        _audioBuffer = new Float32Array(newData); // 新しいデータからバッファを開始
+        _silenceCount = 0;
       }
     }
   };
