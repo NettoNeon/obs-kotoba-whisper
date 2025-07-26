@@ -100,3 +100,34 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+app.on("gpu-info-update", () => {
+  console.log("GPU Information has been Updated");
+});
+
+// @ts-expect-error Electron型定義に存在しないイベント
+app.on("gpu-process-crashed", (event, killed) => {
+  // このイベントは存在しますが、型定義が未対応なだけです。
+  console.log("GPU Process has crashed");
+  console.log(event);
+  console.log("Whether GPU Process was killed - ", killed);
+});
+
+// GPU情報を取得して返すIPCハンドラーを定義
+ipcMain.handle("get-gpu-info", async (event, type) => {
+  try {
+    if (type === "appMetrics") {
+      return app.getAppMetrics();
+    } else if (type === "gpuBasic") {
+      return await app.getGPUInfo("basic");
+    } else if (type === "gpuComplete") {
+      return await app.getGPUInfo("complete");
+    } else if (type === "gpuFeatureStatus") {
+      return app.getGPUFeatureStatus();
+    }
+    return null; // 不明なタイプの場合
+  } catch (error) {
+    console.error(`Failed to get GPU info for type ${type}:`, error);
+    throw error; // エラーをフロントエンドに通知
+  }
+});
