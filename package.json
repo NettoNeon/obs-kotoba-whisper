@@ -56,9 +56,9 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.5.2",
+    "@huggingface/transformers": "^3.7.0",
+    "audio-decode": "^2.2.3",
     "electron-squirrel-startup": "^1.0.1",
-    "onnxruntime-node": "^1.22.0-rev",
     "vue": "^3.5.17"
   }
 }

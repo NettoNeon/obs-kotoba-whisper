@@ -12,40 +12,13 @@ export function useMicrophone() {
 
   // AudioWorkletProcessorのコードを文字列で定義
   const workletProcessorCode = `
-    class MicrophoneProcessor extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.targetSampleRate = 16000;
-        // 'sampleRate' is a global variable in the worklet scope
-        this.resampleRatio = sampleRate / this.targetSampleRate;
-      }
-
-      // Resamples the input buffer using simple nearest-neighbor interpolation
-      resample(buffer) {
-        if (this.resampleRatio === 1) return buffer;
-
-        const numOutputSamples = Math.floor(buffer.length / this.resampleRatio);
-        const resampledBuffer = new Float32Array(numOutputSamples);
-
-        for (let i = 0; i < numOutputSamples; i++) {
-          const nearestInputSample = Math.round(i * this.resampleRatio);
-          resampledBuffer[i] = buffer[nearestInputSample];
-        }
-        return resampledBuffer;
-      }
-
+     class MicrophoneProcessor extends AudioWorkletProcessor {
       process(inputs) {
         const inputChannel = inputs[0][0];
         if (!inputChannel) return true;
 
-        const resampledData = this.resample(inputChannel);
-
-        if (resampledData.length > 0) {
-          // Post the resampled data back to the main thread.
-          // Transfer the underlying ArrayBuffer to avoid copying.
-          this.port.postMessage(resampledData.buffer, [resampledData.buffer]);
-        }
-
+        // そのままデータをメインスレッドに送信
+        this.port.postMessage(inputChannel.buffer, [inputChannel.buffer]);
         return true;
       }
     }
@@ -54,9 +27,9 @@ export function useMicrophone() {
 
   // --- 定数 ---
   const SAMPLE_RATE = 16000; // AudioWorkletから送られてくるデータのサンプルレート（Hz）
-  const VOICE_THRESHOLD = 0.0005; // 音声と判断する閾値
-  const SILENCE_THRESHOLD_FRAMES = Math.round((0.8 * SAMPLE_RATE) / 128); // 0.8秒間の無音で発話終了と判断 (128はworkletのフレームサイズ)
-  const MAX_AUDIO_LENGTH_S = 10; // 最大録音時間（秒）
+  const VOICE_THRESHOLD = 0.005; // 音声と判断する閾値
+  const SILENCE_THRESHOLD_FRAMES = Math.round((0.8 * SAMPLE_RATE) / 128); // 0.8秒間の無音で発話終了と判断 (128はworkletのフレームサイズ)（100フレーム）
+  const MAX_AUDIO_LENGTH_S = 5; // 最大録音時間（秒）
 
   // --- 状態管理用の変数 ---
   let _audioBuffer = new Float32Array();
@@ -135,7 +108,7 @@ export function useMicrophone() {
 
   watch(Stream, async (newStream) => {
     if (newStream) {
-      _audioContext = new AudioContext();
+      _audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
       // AudioWorkletProcessorを動的に追加
       const blob = new Blob([workletProcessorCode], { type: "application/javascript" });
       const url = URL.createObjectURL(blob);

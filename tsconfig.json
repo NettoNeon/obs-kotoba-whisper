@@ -15,7 +15,7 @@
       "@backend/*": ["backend/*"],
       "@components/*": ["components/*"]
     },
-    "types": ["node", "electron", "onnxruntime-node"],
+    "types": ["node", "electron"],
     "outDir": "./dist"
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", ".storybook/**/*.ts", "vite.config.ts"],

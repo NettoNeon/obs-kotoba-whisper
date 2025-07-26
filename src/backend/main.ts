@@ -47,7 +47,7 @@ app.whenReady().then(() => {
       env.localModelPath = path.join(app.getAppPath());
       env.allowRemoteModels = false;
 
-      whisperPipeline = await pipeline("automatic-speech-recognition", "models");
+      whisperPipeline = await pipeline("automatic-speech-recognition", "models/kotoba-whisper-v2.2-ONNX", { device: "dml" });
 
       console.log("Pipeline loaded successfully.");
       return true;
@@ -74,7 +74,7 @@ app.whenReady().then(() => {
       console.log(`Running inference on audio of ${audioLengthInSeconds.toFixed(2)}s`);
 
       const result = await whisperPipeline(audioDataTyped, {
-        language: "ja",
+        language: "japanese",
         max_new_tokens: 200,
       });
 
